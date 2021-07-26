@@ -9,8 +9,8 @@ podcontroller:
   pod_count: 25
   process_pod_cpu_request: 25m
   process_pod_cpu_limit: 1
-  process_pod_memory_request: 200Mi
-  process_pod_memory_limit: 500Mi
+  process_pod_memory_limit: 1000Mi
+  process_pod_memory_request: 300Mi
 srv:
   name: srv
   replicas: 1
