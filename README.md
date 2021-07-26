@@ -310,7 +310,8 @@ kubectl describe secret skooner-sa-token-xxxxx
 
 
 ###
-##Instructions to run 10k files successfully.
+## Instructions to run 10k files successfully.
+
 1) Create an VM from AMI with IO2 10000 IOPS EBS volume.
 2) EBS disk size : 50GB.
 3) Run F2F with 50 threads on for 10k files.
