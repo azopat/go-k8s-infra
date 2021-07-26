@@ -1,0 +1,5 @@
+imagestore:
+  process:
+    registry: ""
+    repository: glasswallsolutions/icap-request-processing-golang-prod
+    tag: v0.7.0
