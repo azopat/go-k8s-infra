@@ -41,12 +41,14 @@ The solution consists of the following components:
 
 ###
 VM configuration needed for this setup to run smoothly 
-- 4 vCPU
-- 4 GB RAM
+- 8 vCPU
+- 32 GB RAM
 - 50 GB Storage volume
+- EBS volume type IO2 with 10000 IOPS
+- Run F2F Test with 50 threads, and 25 default rebuild-pods.
 
 On aws recommended instance type 
-- t2.xlarge
+- t2.2xlarge
 
 Perform following steps with sudo user 
 ```
@@ -276,7 +278,7 @@ kubectl describe secret skooner-sa-token-xxxxx
         
     - Choose Instance Type         :     t2.2xlarge 
     - Configure Instance Details   :     The amount of requested instances 
-    - Add Storage (disk space)     :     At least 50G
+    - Add Storage (disk space)     :     At least 50G (EBS type: Io2 with 10000 IOPS)
     - Add Tags                     :     Put the vm tags
     - Configure Security Group     :     Choose to select from existing groups, and select *launch-wizard-8*
 - Once you verify above details, `LAUNCH` the instance. You will be prompt to enter privet key. Choose existing or create a new pem file.
@@ -307,6 +309,13 @@ kubectl describe secret skooner-sa-token-xxxxx
         - ![image-20210628010438539](/home/nader/.config/Typora/typora-user-images/image-20210628010438539.png)
 
 
+###
+## Instructions to run 10k files successfully.
+
+1) Create an VM from AMI with IO2 10000 IOPS EBS volume.
+2) EBS disk size : 50GB.
+3) Run F2F with 50 threads on for 10k files.
+4) Default Rebuild pods count should be 25.
 
 ## How to Create AMI
 ### Workflow
