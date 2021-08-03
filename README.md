@@ -26,7 +26,15 @@ This repo uses rabbitmq-service-default-user secret which is created over : http
 
 ### Solution diagram
 ![Solution Diagram](https://github.com/k8-proxy/go-k8s-infra/raw/main/diagram/go-k8s-infra.png)
+
+
+
+
+
+![minio sdk](https://user-images.githubusercontent.com/58347752/127935983-e0b00487-792c-441a-a940-505d48b22665.png)
+
 ### Enhancements
+
 The solution provides the following enhancements:
 - Using MinIO instead of local storage for the processing pods.
 - Implementing process pods hot reload feature.
@@ -39,102 +47,91 @@ The solution consists of the following components:
 - [Controller Service.](https://github.com/k8-proxy/go-k8s-controller)
 - Components related to ICAP server, RabbitMQ, transaction logs , Management UI and similar (From here: https://github.com/k8-proxy/icap-infrastructure).
 
-###
-VM configuration needed for this setup to run smoothly 
+### VM configuration needed for this setup to run smoothly
+
 - 8 vCPU
 - 32 GB RAM
 - 50 GB Storage volume
-- EBS volume type IO2 with 10000 IOPS
-- Run F2F Test with 50 threads, and 25 default rebuild-pods.
 
 On aws recommended instance type 
 - t2.2xlarge
 
-Perform following steps with sudo user 
-```
-sudo su
+## Deployment Setup
+- Install prerequisite 
+
+```bash
+sudo apt update
+sudo apt-get install apt-transport-https ca-certificates curl gnupg-agent software-properties-common -y
+sudo snap install yq
 ```
 
-## Development Setup
-- Install k8s
+- Install Docker 
 
-```
-if [ -f ./flush_ip.sh ] ; then
-chmod +x ./flush_ip.sh
-./flush_ip.sh
-fi
+```bash
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get install docker-ce docker-ce-cli containerd.io -y
 ```
 
+- Install local docker registry
+
+```bash
+sudo docker run -d -p 127.0.0.1:30500:5000 --restart always --name registry registry:2
 ```
+
+- Install k3s
+
+```bash
 curl -sfL https://get.k3s.io | sh -
 mkdir -p ~/.kube && sudo install -T /etc/rancher/k3s/k3s.yaml ~/.kube/config -m 600 -o $USER
 ```
-- Install helm
-```
-curl -sfL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
-
-```
-
 - Install kubectl
-
-```
+```bash
 curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
 chmod +x ./kubectl
 sudo mv ./kubectl /usr/local/bin/kubectl
 ```
 
+- Install helm
+
+```bash
+curl -sfL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+```
+
 - Deploy icap-server
 
+```bash
+git clone https://github.com/k8-proxy/icap-infrastructure.git -b k8-main && cd icap-infrastructure
 ```
-cd ~
-ICAP_BRANCH=${ICAP_BRANCH:-k8-develop}
-git clone https://github.com/k8-proxy/icap-infrastructure.git -b $ICAP_BRANCH && cd icap-infrastructure
-```
-```
+```bash
 # Clone ICAP SOW Version
 
-ICAP_SOW_BRANCH=${ICAP_SOW_BRANCH:-main}
-git clone https://github.com/filetrust/icap-infrastructure.git -b $ICAP_SOW_BRANCH /tmp/icap-infrastructure-sow
+git clone https://github.com/filetrust/icap-infrastructure.git -b main /tmp/icap-infrastructure-sow
 cp  /tmp/icap-infrastructure-sow/adaptation/values.yaml adaptation/
 cp  /tmp/icap-infrastructure-sow/administration/values.yaml administration/
 cp  /tmp/icap-infrastructure-sow/ncfs/values.yaml ncfs/
 ```
-```
-# Admin ui default credentials
-sudo mkdir -p /var/local/rancher/host/c/userstore
-sudo cp -r default-user/* /var/local/rancher/host/c/userstore/
-```
-```
-# Create namespaces
+- Create icap-adaptation namespace
+
+```bash
 kubectl create ns icap-adaptation
-kubectl create ns management-ui
-kubectl create ns icap-ncfs
-kubectl create ns minio
-kubectl create ns jaeger
 ```
+
+- Setup rabbitMQ
+
+```bash
+pushd rabbitmq && helm upgrade rabbitmq --install . --namespace icap-adaptation --set rabbitmqService.type=LoadBalancer,rabbitmqController.cpu=500m && popd
 ```
-# Install minio 
-helm repo add minio https://helm.min.io/
-helm install --set accessKey=<minio-user>,secretKey=<minio-password> minio-server minio/minio --namespace minio
-```
-```
-# install docker registry credentials
-kubectl create -n icap-adaptation secret docker-registry regcred \
-	--docker-server=https://index.docker.io/v1/ \
-	--docker-username=$DOCKER_USERNAME \
-	--docker-password=$DOCKER_PASSWORD \
-	--docker-email=$DOCKER_EMAIL
-```
-```
-# Setup rabbitMQ
-pushd rabbitmq && helm upgrade rabbitmq --install . --namespace icap-adaptation && popd
-```
-```
-# Setup icap-server
+
+- Setup Icap-server
+
+```bash
 cat >> openssl.cnf <<EOF
 [ req ]
 prompt = no
 distinguished_name = req_distinguished_name
+
 [ req_distinguished_name ]
 C = GB
 ST = London
@@ -144,94 +141,184 @@ OU = IT
 CN = icap-server
 emailAddress = admin@glasswall.com
 EOF
+```
 
+```bash
 openssl req -newkey rsa:2048 -config openssl.cnf -nodes -keyout  /tmp/tls.key -x509 -days 365 -out /tmp/certificate.crt
+```
+
+```bash
 kubectl create secret tls icap-service-tls-config --namespace icap-adaptation --key /tmp/tls.key --cert /tmp/certificate.crt
 ```
-```
+
+```bash
+#PLEASE REPLACE PLACEHOLDERS
 pushd adaptation
-kubectl create -n icap-adaptation secret generic policyupdateservicesecret --from-literal=username=policy-management --from-literal=password='long-password'
-kubectl create -n icap-adaptation secret generic transactionqueryservicesecret --from-literal=username=query-service --from-literal=password='long-password'
-kubectl create -n icap-adaptation secret generic  rabbitmq-service-default-user --from-literal=username=guest --from-literal=password='guest'
+
+kubectl create -n icap-adaptation secret generic policyupdateservicesecret --from-literal=username=policy-management --from-literal=password='<TRANSACTIONS-PASSWORD>'
+
+kubectl create -n icap-adaptation secret generic transactionqueryservicesecret --from-literal=username=query-service --from-literal=password='<TRANSACTIONS-PASSWORD>'
+
+kubectl create -n icap-adaptation secret generic  rabbitmq-service-default-user --from-literal=username=guest --from-literal=password='<RABBITMQ-DEFAULT-PASSWORD>'
+
 helm upgrade adaptation --values custom-values.yaml --install . --namespace icap-adaptation
 popd
 ```
+
+* Install minio
+
+```bash
+#PLEASE REPLACE PLACEHOLDERS
+kubectl create ns minio
+
+kubectl create ns jaeger
+
+helm repo add minio https://helm.min.io/
+
+helm install -n minio --set accessKey=minio,secretKey=<STRONG-PASSWORD>,buckets[0].name=sourcefiles,buckets[0].policy=none,buckets[0].purge=false,buckets[1].name=cleanfiles,buckets[1].policy=none,buckets[1].purge=false,fullnameOverride=minio-server,persistence.enabled=true,securityContext.enabled=false,persistence.size=20Gi,service.type=LoadBalancer minio/minio --generate-name
+
+kubectl create -n icap-adaptation secret generic minio-credentials --from-literal=username='minio' --from-literal=password=<STRONG-PASSWORD>
 ```
-# Setup icap policy management
-pushd ncfs
-kubectl create -n icap-ncfs secret generic ncfspolicyupdateservicesecret --from-literal=username=policy-update --from-literal=password='long-password'
-helm upgrade ncfs --values custom-values.yaml --install . --namespace icap-ncfs
-popd
+
+* Deploy new Go services
+
+```bash
+cat >> get_sdk_version.sh <<'EOF'
+#!/bin/bash
+
+get_sdk_version() {
+    repo_name=$1
+    image_tag=$2
+    sub_mod=$3
+    branch_name=$4
+    commit_sha=$(echo $image_tag | cut -d"-" -f2)
+    folder_name=$(echo $repo_name | cut -d"/" -f2)
+    git clone https://github.com/$repo_name --recursive --branch $branch_name -c submodule."sdk-rebuild-prod".update=none && pushd $folder_name && git checkout ${commit_sha}
+    submodule_status=$(git submodule status)
+    commit_msg=$(git log -1 --format=%s $sub_mod)
+    sdk_version=$(echo $submodule_status | grep  "[0-9]*\.[0-9]*" -o || true)
+    if [[ -z "$sdk_version" ]]; then
+        sdk_version=$(echo $commit_msg | grep  "[0-9]*\.[0-9]*" -o || true)
+    fi
+    echo $sdk_version > /home/ubuntu/sdk_version.txt
+    pushd $sub_mod
+    last_updated_date=$(git log -1 --date iso --format=%cd libs/rebuild/linux/libglasswall.classic.so)
+    echo $last_updated_date
+    export last_updated_date=$(date -d"${last_updated_date}+30 days" "+%Y-%m-%d")
+    echo $last_updated_date && popd
+    echo "copied sdk version to file" && popd
+    rm -rf $folder_name
+}
+
+EOF
 ```
+
+```bash
+chmod +x get_sdk_version.sh
+source get_sdk_version.sh
 ```
-# setup management ui
-kubectl create -n management-ui secret generic transactionqueryserviceref --from-literal=username=query-service --from-literal=password='long-password'
-kubectl create -n management-ui secret generic policyupdateserviceref --from-literal=username=policy-management --from-literal=password='long-password'
-kubectl create -n management-ui secret generic ncfspolicyupdateserviceref --from-literal=username=policy-update --from-literal=password='long-password'
+
+```bash
+git clone https://github.com/k8-proxy/go-k8s-infra.git -b main && pushd go-k8s-infra
+
+requestImage=$(yq eval '.imagestore.process.tag' services/values.yaml)
+
+get_sdk_version k8-proxy/go-k8s-process $requestImage sdk-rebuild-eval main
 ```
-```
-pushd administration
-helm upgrade administration --values custom-values.yaml --install . --namespace management-ui
-popd
-```
-```
-cd ~
-```
-```
-# Clone go-k8s-infra repo
-git clone https://github.com/k8-proxy/go-k8s-infra.git -b develop && cd go-k8s-infra
-```
-- Scale the existing adaptation service to 0
-```
+
+```BASH
+# Scale the existing adaptation service to 0
 kubectl -n icap-adaptation scale --replicas=0 deployment/adaptation-service
-```
-```
+kubectl -n icap-adaptation delete cronjob pod-janitor
+
+# Install jaeger-agent
+kubectl apply -f jaeger-agent/jaeger.yaml
+
 # Install k8s-dashboard
 kubectl apply -f k8s-dash
-```
-```
-# Install jaeger-agent
-cd jaeger-agent
-kubectl apply -f jaeger.yaml
-```
-- Create minio credentials secret
-```
-kubectl create -n icap-adaptation secret generic minio-credentials --from-literal=username='<minio-user>' --from-literal=password='<minio-password>'
+
+# Apply helm chart to create the services
+helm upgrade servicesv2 --install services --namespace icap-adaptation
+
+popd
 ```
 
-- Apply helm chart to create the services
+* Management User Interface (Optional)
+
+```bash
+# Admin ui default credentials
+sudo mkdir -p /var/local/rancher/host/c/userstore
+sudo cp -r default-user/* /var/local/rancher/host/c/userstore/
 ```
-cd ../services
-helm upgrade servicesv2 --install . --namespace icap-adaptation
+```bash
+# Create namespaces
+kubectl create ns management-ui
+kubectl create ns icap-ncfs
+```
+```bash
+# Setup icap policy management
+# PLEASE REPLACE PLACEHOLDERS
+pushd ncfs
+
+kubectl create -n icap-ncfs secret generic ncfspolicyupdateservicesecret --from-literal=username=policy-update --from-literal=password='<TRANSACTIONS-PASSWORD>'
+
+helm upgrade ncfs --values custom-values.yaml --install . --namespace icap-ncfs
+
+popd
+```
+```BASH
+# setup management ui
+kubectl create -n management-ui secret generic transactionqueryserviceref --from-literal=username=query-service --from-literal=password='<TRANSACTIONS-PASSWORD>'
+
+kubectl create -n management-ui secret generic policyupdateserviceref --from-literal=username=policy-management --from-literal=password='<TRANSACTIONS-PASSWORD>'
+
+kubectl create -n management-ui secret generic ncfspolicyupdateserviceref --from-literal=username=policy-update --from-literal=password='<TRANSACTIONS-PASSWORD>'
+```
+```bash
+pushd administration
+
+helm upgrade administration --values custom-values.yaml --install . --namespace management-ui
+
+popd
+```
+* Install cs-k8s-api (optional)
+
+```bash
+CS_API_IMAGE=${CS_API_IMAGE:-glasswallsolutions/cs-k8s-api:latest}
+
+git clone https://github.com/k8-proxy/cs-k8s-api -b main && pushd cs-k8s-api
+
+git fetch --tags --no-recurse-submodules
+
+latest_github_sha=$(git rev-parse HEAD)
+
+tag_name=$(git tag -l --contains $latest_github_sha | head -n 1)
+
+echo "SDK version is $tag_name"
+
+helm upgrade --install -n icap-adaptation rebuild-api --set application.api.env.SDKApiVersion="${tag_name}",resources.api.limits.cpu="1500m",resources.api.requests.cpu="1000m",resources.api.requests.memory="1000Mi",replicaCount="4"  --set application.api.env.SDKEngineInfo="EVAL" --set application.api.env.EvalExpiryDate="$last_updated_date" --set application.api.env.SDKEngineVersion=$(cat /home/ubuntu/sdk_version.txt ) infra/kubernetes/chart && popd
+
 ```
 
-- Create bucket on minio by accessing the minio console
-```
-export POD_NAME=$(kubectl get pods --namespace minio -l "release=minio-server" -o jsonpath="{.items[0].metadata.name}")
+* Install Filedrop UI (optional)
 
-kubectl port-forward $POD_NAME 9000 --namespace minio
+```bash
+git clone https://github.com/k8-proxy/k8-rebuild.git -b main && pushd k8-rebuild
 
-go to browser and access the minio console with http://127.0.0.1:9000 / http://machine-ip:9000 
+# build images
+rm -rf kubernetes/charts/sow-rest-api-0.1.0.tgz
+rm -rf kubernetes/charts/nginx-8.2.0.tgz
 
-and credentails is accesskey and secret you have pass when deploying minio .
-once you are in minio UI create an bucket 1) sourcefiles and 2) cleanfiles
+# install helm charts
+helm upgrade --install k8-rebuild -n icap-adaptation --set nginx.service.type=ClusterIP --atomic kubernetes/ && popd
 ```
-- Process the Pdf file and check the logs of minio 
-```
-c-icap-client -i <Icap-server-ip/machine-ip> -p 1344 -s gw_rebuild -f ./sample.pdf -o ./reb.pdf -v
-```
-```
-# check logs of service deploy in icap-adaptation namespace
-kubectl logs -f <pod-name> -n icap-adaptation
-ex: kubectl logs -f srv-94fd6cc74-bqjhs -n icap-adaptation
-```
-```
-# get access token for kubernetes dashboard
-kubectl get secret 
 
-kubectl describe secret skooner-sa-token-xxxxx
-```
+
+
 ## Services and Expose Port.
+
+Make sure that the following ports are open accessible from the security group
+
 <table>
 <tr>
 <td> Service Name </td>
@@ -264,9 +351,9 @@ kubectl describe secret skooner-sa-token-xxxxx
 </table>
 ## Production Setup
 
-* Latest ICAP AMI without DSK API : ami-08eb467551ac8b5d6
+* Latest ICAP AMI without DSK API : #TBD#
 
-* Icap AMI with SDK API : ami-0874e365dfffd43d0
+* Icap AMI with SDK API : #TBD#
 
 
 - Login to aws console https://aws.amazon.com/console/
@@ -276,11 +363,11 @@ kubectl describe secret skooner-sa-token-xxxxx
 - Click on "Launch" button
 - Select below configarature for next steps (available on bottom right corner):
         
-    - Choose Instance Type         :     t2.2xlarge 
-    - Configure Instance Details   :     The amount of requested instances 
-    - Add Storage (disk space)     :     At least 50G (EBS type: Io2 with 10000 IOPS)
-    - Add Tags                     :     Put the vm tags
-    - Configure Security Group     :     Choose to select from existing groups, and select *launch-wizard-8*
+    - Choose Instance Type      	   :     t2.2xlarge 
+    - Configure Instance Details     :     The amount of requested instances 
+    - Add Storage (disk space)        :     At least 50G
+    - Add Tags                    	           :     Put the vm tags
+    - Configure Security Group      :     Choose to select from existing groups, and select *launch-wizard-8*
 - Once you verify above details, `LAUNCH` the instance. You will be prompt to enter privet key. Choose existing or create a new pem file.
 - Wait untill the instance goes to running state
 - Get the Public IP of the instance
@@ -309,18 +396,14 @@ kubectl describe secret skooner-sa-token-xxxxx
         - ![image-20210628010438539](/home/nader/.config/Typora/typora-user-images/image-20210628010438539.png)
 
 
-###
-## Instructions to run 10k files successfully.
-
-1) Create an VM from AMI with IO2 10000 IOPS EBS volume.
-2) EBS disk size : 50GB.
-3) Run F2F with 50 threads on for 10k files.
-4) Default Rebuild pods count should be 25.
 
 ## How to Create AMI
 ### Workflow
 
-- Create the ami is done by triggering the icap-server(https://github.com/k8-proxy/GW-Releases/actions?query=workflow%3Aicap-server) workflow
+- Create the ami is done by triggering the glasswall-rebuild workflows here https://github.com/k8-proxy/EAP-releases/actions
+
+    - Run glasswall-rebuild-ck8s for compliant kubernetes based AMI
+    - Run glasswall-rebuild-k3s for k3s based ami
 
 - There are 2 main jobs for that workflow:
     - build-ami
@@ -338,33 +421,22 @@ kubectl describe secret skooner-sa-token-xxxxx
 
     ![deploy-ami](imgs/deploy-ami.png)
 
-### Workflow Requirements
-    - branch to use workflow from
-    - AWS region(s) where AMI will be created
-    - IP of monitoring server
-
-
-### Workflow Detail
-- [YAML File](https://github.com/k8-proxy/GW-Releases/blob/main/.github/workflows/icap-server.yaml) 
-- build AMI
-    - Configure AWS credentials
-    - Setup [Packer](https://github.com/k8-proxy/vmware-scripts/tree/main/packer)
-    - Build AMI using Packer 
-- deploy AMI
-    - Get current instance ID and other instance IDs with the same name as current instance
-    - Deploy the instance
-    - Run [healthcheck tests](https://github.com/k8-proxy/vmware-scripts/tree/f129ec357284c61206edf36415b1b2ba403bff95/HealthCheck) on the instance
-        - if tests are successful for current instance, all previous instances are terminated
-        - if tests are failed, current instance is terminated and deleted
-
 ### Execution
-- Open the link https://github.com/k8-proxy/GW-Releases/actions/workflows/icap-server.yaml
-- If you are creating an AMI with SDK, select the branch : minio-with-sdk , if you are creating icap ami without sdk api select branch minio
-- Click on "Run workflow" as on the screenshot
-![Run workflow](imgs/run_workflow.png)
-- Once it's completed the AMI will be available in the logs
-![Workflow logs](imgs/workflow_logs.png)
 
-## Test
+* Select the desired deployment workflow (k3s or ck8s)
+* Manually trigger the workflow by pressing **Run workflow** and provide the following data:
+  * Which branch to run this workflow from.
+  * Icap infrastructure to use.
+  * Which AWS regions where created AMI should be published.
+  * Either to install filedrop UI & cs API on the AMI or not.
+  * Either to create an OVA from the AMI or not.
 
-For testing, try to rebuild a file
+![image](https://user-images.githubusercontent.com/58347752/127935660-d9b133fe-357e-4164-8a49-e06ef3cfa529.png)
+
+* Once the run is done you will fine the AMI id in **build-ami** job at the end of **Build Eval OVA/AMI** logs
+
+![image](https://user-images.githubusercontent.com/58347752/127935939-5e33d83e-15bb-43dd-83eb-24c88ef28fd1.png)
+
+* And you can find the deployed instance ID and IP in **deploy-ami** job under **Deploy AMI to dev** logs
+
+![image](https://user-images.githubusercontent.com/58347752/127935914-e6bc0554-6282-4ad7-a6a3-7bf2f8b910a9.png)
