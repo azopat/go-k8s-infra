@@ -23,6 +23,10 @@ spec:
           value: "{{ .Values.podcontroller.process_pod_memory_limit }}"
         - name: PROCESS_POD_MEMORY_REQUEST
           value: "{{ .Values.podcontroller.process_pod_memory_request }}"
+        - name: PROCESS_POD_CPU_REQUEST
+          value: "{{ .Values.podcontroller.process_pod_cpu_request }}"
+        - name: PROCESS_POD_CPU_LIMIT
+          value: "{{ .Values.podcontroller.process_pod_cpu_limit }}"
         - name: PROCESS_IMAGE
           value: {{ .Values.imagestore.process.registry }}{{ .Values.imagestore.process.repository }}:{{ .Values.imagestore.process.tag }}
         - name: MINIO_ENDPOINT
@@ -53,11 +57,3 @@ spec:
           value: {{ .Values.jaeger.port | quote }}
         - name: JAEGER_AGENT_ON
           value: "true"
-        - name: PROCESS_POD_CPU_REQUEST
-          value: "{{ .Values.podcontroller.process_pod_cpu_request }}"
-        - name: PROCESS_POD_CPU_LIMIT
-          value: "{{ .Values.podcontroller.process_pod_cpu_limit }}"
-        - name: PROCESS_POD_MEMORY_REQUEST
-          value: "{{ .Values.podcontroller.process_pod_memory_request }}"
-        - name: PROCESS_POD_MEMORY_LIMIT
-          value: "{{ .Values.podcontroller.process_pod_memory_limit }}"
