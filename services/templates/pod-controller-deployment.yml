@@ -57,3 +57,5 @@ spec:
           value: {{ .Values.jaeger.port | quote }}
         - name: JAEGER_AGENT_ON
           value: "true"
+        - name: PROCESS_POD_NAMESPACE
+          value: {{ .Release.Namespace }}
